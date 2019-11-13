@@ -9,7 +9,7 @@ type TimeStamp int64
 
 type FileUploadResponse struct {
 	Filename     string    `json:"filename"`
-	MD5          string    `json:"md5"`
+	Path         string    `json:"path"`
 	Size         int64     `json:"size"`
 	ModifiedTime TimeStamp `json:"modified_time"`
 }

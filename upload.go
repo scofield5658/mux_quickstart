@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -28,21 +26,7 @@ func FileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hash := md5.New()
-
-	if _, err = io.Copy(hash, file); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(ErrorResponse{
-			ErrCode: -1,
-			ErrMsg:  err.Error(),
-		})
-		return
-	}
-
-	hashInBytes := hash.Sum(nil)[:16]
-	fileMd5 = hex.EncodeToString(hashInBytes)
-
-	storageDir, err := getWorkDir()
+	storageDir, err := getStorageDir()
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(ErrorResponse{
@@ -52,20 +36,36 @@ func FileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storagePath := filepath.Join(storageDir, fileMd5)
+	var now = time.Now()
+	var subStorageDir = now.Format("20060102")
+	err = os.MkdirAll(filepath.Join(storageDir, subStorageDir), os.ModePerm)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(ErrorResponse{
+			ErrCode: -1,
+			ErrMsg:  err.Error(),
+		})
+		return
+	}
+
+	fileForHash, _, err := r.FormFile("file")
+	fileMd5, err = getMD5ForFile(&fileForHash)
+
+	storagePath := filepath.Join(storageDir, subStorageDir, fileMd5)
 	fileInfo, err := os.Stat(storagePath)
 	if err == nil {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(FileUploadResponse{
 			Filename:     handler.Filename,
 			Size:         fileInfo.Size(),
-			MD5:          fileMd5,
+			Path:         subStorageDir + "/" + fileMd5,
 			ModifiedTime: TimeStamp(fileInfo.ModTime().Unix()),
 		})
 		return
 	}
 
-	f, err := os.OpenFile(storagePath, os.O_WRONLY|os.O_CREATE, 0666)
+	f, err := os.OpenFile(storagePath, os.O_WRONLY|os.O_CREATE, os.ModePerm)
+	defer f.Close()
 
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -85,12 +85,11 @@ func FileUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var now = time.Now()
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(FileUploadResponse{
 		Filename:     handler.Filename,
 		Size:         handler.Size,
-		MD5:          fileMd5,
+		Path:         subStorageDir + "/" + fileMd5,
 		ModifiedTime: TimeStamp(now.Unix()),
 	})
 }
